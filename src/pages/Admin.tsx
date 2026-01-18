@@ -8,6 +8,7 @@ import {
   Check,
   Clock,
   Loader2,
+  Lock,
   Phone,
   RefreshCw,
   User,
@@ -18,6 +19,8 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 type AppointmentStatus = "pendente" | "confirmado" | "recusado";
 
@@ -27,6 +30,7 @@ interface Appointment {
   email: string;
   whatsapp: string;
   servico: string;
+  profissional?: string;
   data_hora: string;
   status: AppointmentStatus;
   created_at: string;
@@ -50,10 +54,45 @@ const statusConfig = {
   },
 };
 
+const ADMIN_PIN = "admin123";
+const AUTH_KEY = "booking_buddy_admin_auth";
+
 const Admin = () => {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [pin, setPin] = useState("");
+  
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Check session storage on mount
+    const isAuth = sessionStorage.getItem(AUTH_KEY) === "true";
+    setIsAuthenticated(isAuth);
+    
+    if (isAuth) {
+      fetchAppointments();
+    }
+  }, []);
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pin === ADMIN_PIN) {
+      sessionStorage.setItem(AUTH_KEY, "true");
+      setIsAuthenticated(true);
+      fetchAppointments();
+      toast.success("Login realizado com sucesso");
+    } else {
+      toast.error("PIN incorreto");
+      setPin("");
+    }
+  };
+
+  const handleLogout = () => {
+    sessionStorage.removeItem(AUTH_KEY);
+    setIsAuthenticated(false);
+    setAppointments([]);
+  };
 
   const fetchAppointments = async () => {
     setLoading(true);
@@ -72,10 +111,6 @@ const Admin = () => {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    fetchAppointments();
-  }, []);
 
   const updateStatus = async (id: string, status: AppointmentStatus) => {
     setUpdatingId(id);
@@ -106,6 +141,47 @@ const Admin = () => {
 
   const pendingCount = appointments.filter((a) => a.status === "pendente").length;
 
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-card border border-border rounded-xl p-6 shadow-lg animate-scale-in">
+          <div className="text-center mb-6">
+            <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4 text-primary">
+              <Lock className="w-6 h-6" />
+            </div>
+            <h1 className="text-2xl font-bold text-foreground">Área Restrita</h1>
+            <p className="text-muted-foreground mt-2">
+              Digite o PIN para acessar o painel administrativo
+            </p>
+          </div>
+
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="pin">PIN de Acesso</Label>
+              <Input
+                id="pin"
+                type="password"
+                placeholder="••••••••"
+                value={pin}
+                onChange={(e) => setPin(e.target.value)}
+                className="text-center text-lg tracking-widest"
+                autoFocus
+              />
+            </div>
+            <Button type="submit" className="w-full">
+              Entrar
+            </Button>
+            <div className="text-center mt-4">
+               <Link to="/" className="text-sm text-muted-foreground hover:text-primary transition-colors">
+                  Voltar para o início
+               </Link>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -130,11 +206,19 @@ const Admin = () => {
 
             <div className="flex items-center gap-3">
               {pendingCount > 0 && (
-                <Badge variant="secondary" className="gap-1">
+                <Badge variant="secondary" className="gap-1 animate-pulse">
                   <Clock className="w-3 h-3" />
                   {pendingCount} pendente{pendingCount > 1 ? "s" : ""}
                 </Badge>
               )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleLogout}
+                className="text-muted-foreground hover:text-destructive"
+              >
+                Sair
+              </Button>
               <Button
                 variant="outline"
                 size="icon"
@@ -182,9 +266,17 @@ const Admin = () => {
                     <div className="flex-1 space-y-3">
                       <div className="flex items-start justify-between">
                         <div>
-                          <h3 className="font-semibold text-foreground text-lg">
-                            {appointment.servico}
-                          </h3>
+                           <div className="flex items-center gap-2 mb-1">
+                             <h3 className="font-semibold text-foreground text-lg">
+                              {appointment.servico}
+                            </h3>
+                            {appointment.profissional && (
+                              <Badge variant="outline" className="text-xs font-normal bg-muted/50">
+                                com {appointment.profissional}
+                              </Badge>
+                            )}
+                           </div>
+                          
                           <p className="text-sm text-muted-foreground">
                             {format(
                               new Date(appointment.data_hora),

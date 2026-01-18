@@ -1,56 +1,47 @@
 import { cn } from "@/lib/utils";
-import { Scissors, Sparkles, Palette, Brush } from "lucide-react";
-
-const services = [
-  {
-    id: "corte-cabelo",
-    name: "Corte de Cabelo",
-    description: "Corte moderno e personalizado",
-    duration: "45 min",
-    price: "R$ 50",
-    icon: Scissors,
-  },
-  {
-    id: "manicure",
-    name: "Manicure",
-    description: "Unhas impecáveis e bem cuidadas",
-    duration: "1h",
-    price: "R$ 40",
-    icon: Sparkles,
-  },
-  {
-    id: "coloracao",
-    name: "Coloração",
-    description: "Tintura profissional de alta qualidade",
-    duration: "2h",
-    price: "R$ 120",
-    icon: Palette,
-  },
-  {
-    id: "maquiagem",
-    name: "Maquiagem",
-    description: "Make profissional para qualquer ocasião",
-    duration: "1h30",
-    price: "R$ 80",
-    icon: Brush,
-  },
-];
+import { services, professionals } from "@/data/data";
 
 interface ServicesSectionProps {
   selectedService: string;
+  selectedProfessional: string;
   onSelectService: (serviceId: string) => void;
 }
 
 export const ServicesSection = ({
   selectedService,
+  selectedProfessional,
   onSelectService,
 }: ServicesSectionProps) => {
+  // Filter services based on selected professional
+  const professional = professionals.find((p) => p.id === selectedProfessional);
+  
+  const displayedServices = professional 
+    ? services.filter((s) => professional.services.includes(s.id))
+    : []; // Or show all if none selected? The request implies sequential flow.
+
+  if (!selectedProfessional) {
+    return (
+      <section className="py-12 md:py-16 opacity-50 pointer-events-none filter grayscale transition-all duration-500" id="services">
+        <div className="container mx-auto px-4">
+           <div className="text-center mb-10">
+            <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-3">
+              Nossos Serviços
+            </h2>
+            <p className="text-muted-foreground">
+              Selecione um profissional primeiro para ver os serviços disponíveis
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="py-12 md:py-16" id="services">
       <div className="container mx-auto px-4">
-        <div className="text-center mb-10">
+        <div className="text-center mb-10 animate-fade-in">
           <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-3">
-            Nossos Serviços
+            Serviços de {professional?.name.split(' ')[0]}
           </h2>
           <p className="text-muted-foreground">
             Selecione o serviço que deseja agendar
@@ -58,7 +49,7 @@ export const ServicesSection = ({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 max-w-5xl mx-auto">
-          {services.map((service, index) => {
+          {displayedServices.map((service, index) => {
             const Icon = service.icon;
             const isSelected = selectedService === service.id;
 
@@ -110,5 +101,3 @@ export const ServicesSection = ({
     </section>
   );
 };
-
-export { services };

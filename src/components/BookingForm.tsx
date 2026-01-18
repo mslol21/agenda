@@ -17,7 +17,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { services } from "./ServicesSection";
+import { services, professionals } from "@/data/data";
 import { TimeSlotPicker } from "./TimeSlotPicker";
 
 const bookingSchema = z.object({
@@ -34,10 +34,11 @@ type BookingFormData = z.infer<typeof bookingSchema>;
 
 interface BookingFormProps {
   selectedService: string;
+  selectedProfessional: string;
   onSuccess: () => void;
 }
 
-export const BookingForm = ({ selectedService, onSuccess }: BookingFormProps) => {
+export const BookingForm = ({ selectedService, selectedProfessional, onSuccess }: BookingFormProps) => {
   const [date, setDate] = useState<Date>();
   const [time, setTime] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -51,10 +52,16 @@ export const BookingForm = ({ selectedService, onSuccess }: BookingFormProps) =>
   });
 
   const selectedServiceData = services.find((s) => s.id === selectedService);
+  const selectedProfessionalData = professionals.find((p) => p.id === selectedProfessional);
 
   const onSubmit = async (data: BookingFormData) => {
     if (!selectedService) {
       toast.error("Por favor, selecione um serviço");
+      return;
+    }
+
+    if (!selectedProfessional) {
+      toast.error("Por favor, selecione um profissional");
       return;
     }
 
@@ -80,6 +87,7 @@ export const BookingForm = ({ selectedService, onSuccess }: BookingFormProps) =>
         email: data.email,
         whatsapp: data.whatsapp,
         servico: selectedServiceData?.name || selectedService,
+        profissional: selectedProfessionalData?.name || selectedProfessional,
         data_hora: dateTime.toISOString(),
         status: "pendente",
       });
@@ -96,8 +104,25 @@ export const BookingForm = ({ selectedService, onSuccess }: BookingFormProps) =>
     }
   };
 
+  if (!selectedService) {
+    return (
+      <section className="py-12 md:py-16 bg-card border-t border-border opacity-50 pointer-events-none filter grayscale transition-all duration-500" id="booking">
+        <div className="container mx-auto px-4">
+          <div className="max-w-xl mx-auto text-center">
+             <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-3">
+              Complete seu Agendamento
+            </h2>
+            <p className="text-muted-foreground">
+              Selecione um profissional e um serviço para continuar
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   return (
-    <section className="py-12 md:py-16 bg-card border-t border-border" id="booking">
+    <section className="py-12 md:py-16 bg-card border-t border-border animate-fade-in" id="booking">
       <div className="container mx-auto px-4">
         <div className="max-w-xl mx-auto">
           <div className="text-center mb-8">
@@ -105,16 +130,27 @@ export const BookingForm = ({ selectedService, onSuccess }: BookingFormProps) =>
               Complete seu Agendamento
             </h2>
             <p className="text-muted-foreground">
-              Preencha os dados abaixo para solicitar seu horário
+              Preencha os dados abaixo para solicitar seu horário com <strong>{selectedProfessionalData?.name}</strong>
             </p>
           </div>
 
-          {selectedService && selectedServiceData && (
+          {(selectedServiceData && selectedProfessionalData) && (
             <div className="mb-6 p-4 rounded-lg bg-accent border border-primary/20 animate-scale-in">
-              <p className="text-sm text-muted-foreground mb-1">Serviço selecionado:</p>
-              <p className="font-semibold text-foreground">
-                {selectedServiceData.name} - {selectedServiceData.price}
-              </p>
+              <div className="flex items-center justify-between">
+                <div>
+                   <p className="text-sm text-muted-foreground mb-1">Resumo do pedido:</p>
+                   <p className="font-semibold text-foreground text-lg">
+                    {selectedServiceData.name}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Profissional: {selectedProfessionalData.name}
+                  </p>
+                </div>
+                <div className="text-right">
+                   <p className="font-bold text-primary text-xl">{selectedServiceData.price}</p>
+                   <p className="text-xs text-muted-foreground">{selectedServiceData.duration}</p>
+                </div>
+              </div>
             </div>
           )}
 
@@ -223,12 +259,6 @@ export const BookingForm = ({ selectedService, onSuccess }: BookingFormProps) =>
                 "Solicitar Agendamento"
               )}
             </Button>
-
-            {!selectedService && (
-              <p className="text-center text-sm text-muted-foreground">
-                Selecione um serviço acima para continuar
-              </p>
-            )}
           </form>
         </div>
       </div>
