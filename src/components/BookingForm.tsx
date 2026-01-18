@@ -5,7 +5,6 @@ import { z } from "zod";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { CalendarIcon, Loader2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -17,6 +16,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { db } from "@/lib/firebase";
+import { collection, addDoc } from "firebase/firestore";
 import { services, professionals } from "@/data/data";
 import { TimeSlotPicker } from "./TimeSlotPicker";
 
@@ -77,12 +78,13 @@ export const BookingForm = ({ selectedService, selectedProfessional, onSuccess }
 
     setIsSubmitting(true);
 
+
     try {
       const [hours, minutes] = time.split(":").map(Number);
       const dateTime = new Date(date);
       dateTime.setHours(hours, minutes, 0, 0);
 
-      const { error } = await supabase.from("agendamentos").insert({
+      await addDoc(collection(db, "agendamentos"), {
         nome_cliente: data.nome,
         email: data.email,
         whatsapp: data.whatsapp,
@@ -90,9 +92,8 @@ export const BookingForm = ({ selectedService, selectedProfessional, onSuccess }
         profissional: selectedProfessionalData?.name || selectedProfessional,
         data_hora: dateTime.toISOString(),
         status: "pendente",
+        created_at: new Date().toISOString()
       });
-
-      if (error) throw error;
 
       toast.success("Agendamento solicitado com sucesso!");
       onSuccess();

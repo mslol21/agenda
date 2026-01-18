@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { db } from "@/lib/firebase";
+import { collection, query, where, getDocs } from "firebase/firestore";
 import { cn } from "@/lib/utils";
 import { Clock, Loader2 } from "lucide-react";
 
@@ -44,22 +45,32 @@ export const TimeSlotPicker = ({
         const endOfDay = new Date(selectedDate);
         endOfDay.setHours(23, 59, 59, 999);
 
-        const { data, error } = await supabase
-          .from("agendamentos")
-          .select("data_hora")
-          .gte("data_hora", startOfDay.toISOString())
-          .lte("data_hora", endOfDay.toISOString())
-          .neq("status", "recusado");
+        // Firestore Query
+        // Note: We store dates as ISO strings in "data_hora" field.
+        const bookingsRef = collection(db, "agendamentos");
+        const q = query(
+            bookingsRef,
+            where("data_hora", ">=", startOfDay.toISOString()),
+            where("data_hora", "<=", endOfDay.toISOString())
+        );
 
-        if (error) throw error;
+        const querySnapshot = await getDocs(q);
+        const booked: string[] = [];
 
-        // Extract just the time portion (HH:MM) from booked appointments
-        const booked = (data || []).map((appointment) => {
-          const date = new Date(appointment.data_hora);
-          return `${date.getHours().toString().padStart(2, "0")}:${date
-            .getMinutes()
-            .toString()
-            .padStart(2, "0")}`;
+        querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            // Filter out 'recusado' manually if compound query index is missing, 
+            // or add .where("status", "!=", "recusado") if index exists.
+            // Safe bet for dev without index creation: filter in JS.
+            if (data.status !== "recusado") {
+                const date = new Date(data.data_hora);
+                booked.push(
+                    `${date.getHours().toString().padStart(2, "0")}:${date
+                    .getMinutes()
+                    .toString()
+                    .padStart(2, "0")}`
+                );
+            }
         });
 
         setBookedTimes(booked);
