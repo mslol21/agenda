@@ -17,9 +17,9 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { db } from "@/lib/firebase";
-import { collection, addDoc, getDocs } from "firebase/firestore";
+import { collection, addDoc, getDocs, doc, getDoc } from "firebase/firestore";
 import { TimeSlotPicker } from "./TimeSlotPicker";
-import { Service, Professional } from "@/types";
+import { Service, Professional, Settings } from "@/types";
 
 const bookingSchema = z.object({
   nome: z.string().min(2, "Nome deve ter pelo menos 2 caracteres").max(100),
@@ -46,18 +46,38 @@ export const BookingForm = ({ selectedService, selectedProfessional, onSuccess }
   
   const [services, setServices] = useState<Service[]>([]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
+  const [settings, setSettings] = useState<Settings | null>(null);
 
   // Fetch data
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [servicesSnap, professionalsSnap] = await Promise.all([
+        const [servicesSnap, professionalsSnap, settingsSnap] = await Promise.all([
              getDocs(collection(db, "servicos")),
-             getDocs(collection(db, "profissionais"))
+             getDocs(collection(db, "profissionais")),
+             getDoc(doc(db, "settings", "general"))
         ]);
         
         setServices(servicesSnap.docs.map(d => ({ id: d.id, ...d.data() } as Service)));
         setProfessionals(professionalsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Professional)));
+        
+        if (settingsSnap.exists()) {
+            setSettings(settingsSnap.data() as Settings);
+        } else {
+            // Default settings fallback
+            setSettings({
+                days: {
+                    "0": { isOpen: false, startTime: "09:00", endTime: "18:00" },
+                    "1": { isOpen: true, startTime: "09:00", endTime: "18:00" },
+                    "2": { isOpen: true, startTime: "09:00", endTime: "18:00" },
+                    "3": { isOpen: true, startTime: "09:00", endTime: "18:00" },
+                    "4": { isOpen: true, startTime: "09:00", endTime: "18:00" },
+                    "5": { isOpen: true, startTime: "09:00", endTime: "18:00" },
+                    "6": { isOpen: true, startTime: "09:00", endTime: "18:00" },
+                },
+                appointmentInterval: 60
+            });
+        }
       } catch (error) {
         console.error("Error fetching data:", error);
       }
@@ -244,9 +264,12 @@ export const BookingForm = ({ selectedService, selectedProfessional, onSuccess }
                       setDate(newDate);
                       setTime(""); // Reset time when date changes
                     }}
-                    disabled={(date) =>
-                      date < new Date() || date.getDay() === 0
-                    }
+                    disabled={(date) => {
+                      if (date < new Date(new Date().setHours(0, 0, 0, 0))) return true;
+                      if (!settings) return false;
+                      const day = date.getDay().toString();
+                      return !settings.days[day]?.isOpen; // Disable if day is closed
+                    }}
                     initialFocus
                     locale={ptBR}
                     className="pointer-events-auto"
@@ -263,6 +286,8 @@ export const BookingForm = ({ selectedService, selectedProfessional, onSuccess }
                   selectedDate={date}
                   selectedTime={time}
                   onSelectTime={setTime}
+                  settings={settings}
+                  professionalName={selectedProfessionalData?.name}
                 />
               </div>
             </div>

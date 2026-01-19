@@ -2,33 +2,90 @@ import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { cn } from "@/lib/utils";
-import { Clock, Loader2 } from "lucide-react";
-
-const timeSlots = [
-  { time: "09:00", period: "Manhã" },
-  { time: "10:00", period: "Manhã" },
-  { time: "11:00", period: "Manhã" },
-  { time: "14:00", period: "Tarde" },
-  { time: "15:00", period: "Tarde" },
-  { time: "16:00", period: "Tarde" },
-  { time: "17:00", period: "Tarde" },
-  { time: "18:00", period: "Tarde" },
-];
+import { Clock, Loader2, AlertCircle } from "lucide-react";
+import { Settings } from "@/types";
 
 interface TimeSlotPickerProps {
   selectedDate: Date | undefined;
   selectedTime: string;
   onSelectTime: (time: string) => void;
+  settings: Settings | null;
+  professionalName?: string;
 }
 
 export const TimeSlotPicker = ({
   selectedDate,
   selectedTime,
   onSelectTime,
+  settings,
+  professionalName
 }: TimeSlotPickerProps) => {
   const [bookedTimes, setBookedTimes] = useState<string[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [loadingBookings, setLoadingBookings] = useState(false);
+  const [generatedSlots, setGeneratedSlots] = useState<{ time: string; period: string }[]>([]);
 
+  // Generate slots based on settings
+  useEffect(() => {
+    if (!settings || !selectedDate) {
+      setGeneratedSlots([]);
+      return;
+    }
+
+    const dayId = selectedDate.getDay().toString();
+    const dayConfig = settings.days[dayId];
+
+    if (!dayConfig || !dayConfig.isOpen) {
+      setGeneratedSlots([]);
+      return;
+    }
+
+    const slots: { time: string; period: string }[] = [];
+    const interval = settings.appointmentInterval || 60; // default 60 min
+
+    const [startHour, startMin] = dayConfig.startTime.split(':').map(Number);
+    const [endHour, endMin] = dayConfig.endTime.split(':').map(Number);
+
+    let current = new Date(selectedDate);
+    current.setHours(startHour, startMin, 0, 0);
+
+    const end = new Date(selectedDate);
+    end.setHours(endHour, endMin, 0, 0);
+
+    const now = new Date();
+    // Margin of 2 hours from now
+    const minBookingTime = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+
+    while (current < end) {
+      // Check if slot is in the past or within 2 hour margin
+      // Note: current is the slot start time
+      if (current < minBookingTime) {
+         current.setMinutes(current.getMinutes() + interval);
+         continue; 
+      }
+
+      const timeStr = formatTime(current);
+      const hour = current.getHours();
+      let period = "Manhã";
+      if (hour >= 12 && hour < 18) period = "Tarde";
+      if (hour >= 18) period = "Noite";
+
+      slots.push({ time: timeStr, period });
+
+      current.setMinutes(current.getMinutes() + interval);
+    }
+
+    setGeneratedSlots(slots);
+
+  }, [settings, selectedDate]);
+
+  // Helper
+  const formatTime = (date: Date) => {
+    const h = date.getHours().toString().padStart(2, '0');
+    const m = date.getMinutes().toString().padStart(2, '0');
+    return `${h}:${m}`;
+  };
+
+  // Fetch bookings
   useEffect(() => {
     const fetchBookedTimes = async () => {
       if (!selectedDate) {
@@ -36,17 +93,14 @@ export const TimeSlotPicker = ({
         return;
       }
 
-      setIsLoading(true);
+      setLoadingBookings(true);
       try {
-        // Get start and end of the selected day
         const startOfDay = new Date(selectedDate);
         startOfDay.setHours(0, 0, 0, 0);
         
         const endOfDay = new Date(selectedDate);
         endOfDay.setHours(23, 59, 59, 999);
 
-        // Firestore Query
-        // Note: We store dates as ISO strings in "data_hora" field.
         const bookingsRef = collection(db, "agendamentos");
         const q = query(
             bookingsRef,
@@ -59,17 +113,13 @@ export const TimeSlotPicker = ({
 
         querySnapshot.forEach((doc) => {
             const data = doc.data();
-            // Filter out 'recusado' manually if compound query index is missing, 
-            // or add .where("status", "!=", "recusado") if index exists.
-            // Safe bet for dev without index creation: filter in JS.
+            // Filter by professional if provided
             if (data.status !== "recusado") {
+                if (professionalName && data.profissional !== professionalName) {
+                    return; // Skip if it's for another professional
+                }
                 const date = new Date(data.data_hora);
-                booked.push(
-                    `${date.getHours().toString().padStart(2, "0")}:${date
-                    .getMinutes()
-                    .toString()
-                    .padStart(2, "0")}`
-                );
+                booked.push(formatTime(date));
             }
         });
 
@@ -77,15 +127,16 @@ export const TimeSlotPicker = ({
       } catch (error) {
         console.error("Error fetching booked times:", error);
       } finally {
-        setIsLoading(false);
+        setLoadingBookings(false);
       }
     };
 
     fetchBookedTimes();
-  }, [selectedDate]);
+  }, [selectedDate, professionalName]); // Added professionalName dependency
 
-  const morningSlots = timeSlots.filter((slot) => slot.period === "Manhã");
-  const afternoonSlots = timeSlots.filter((slot) => slot.period === "Tarde");
+  if (!settings) {
+      return <div className="p-4 text-center text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin mx-auto"/> Carregando configurações...</div>;
+  }
 
   if (!selectedDate) {
     return (
@@ -96,12 +147,27 @@ export const TimeSlotPicker = ({
     );
   }
 
-  if (isLoading) {
+  if (loadingBookings) {
     return (
       <div className="flex items-center justify-center py-8">
         <Loader2 className="w-6 h-6 animate-spin text-primary" />
       </div>
     );
+  }
+
+  // Check if day is closed
+  const dayConfig = settings.days[selectedDate.getDay().toString()];
+  if (!dayConfig?.isOpen) {
+      return (
+          <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+            <AlertCircle className="w-8 h-8 mb-2 opacity-50 text-destructive" />
+            <p className="text-sm font-medium">Não atendemos neste dia.</p>
+          </div>
+      );
+  }
+
+  if (generatedSlots.length === 0) {
+      return <div className="py-8 text-center text-muted-foreground">Nenhum horário configurado.</div>;
   }
 
   const renderTimeSlot = (slot: { time: string; period: string }) => {
@@ -131,56 +197,47 @@ export const TimeSlotPicker = ({
         >
           {slot.time}
         </span>
-        {isBooked && (
-          <span className="text-xs text-destructive mt-1">Ocupado</span>
-        )}
-        {isSelected && !isBooked && (
-          <span className="text-xs text-primary mt-1">Selecionado</span>
-        )}
       </button>
     );
   };
 
-  const availableCount = timeSlots.length - bookedTimes.length;
+  const availableCount = generatedSlots.length - bookedTimes.length;
+  const morningSlots = generatedSlots.filter(s => s.period === "Manhã");
+  const afternoonSlots = generatedSlots.filter(s => s.period === "Tarde");
+  const nightSlots = generatedSlots.filter(s => s.period === "Noite");
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          {availableCount} horário{availableCount !== 1 ? "s" : ""} disponível
-          {availableCount !== 1 ? "is" : ""}
+          {availableCount > 0 ? `${availableCount} horários disponíveis` : "Sem horários livres"}
         </p>
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1">
-            <span className="w-3 h-3 rounded border-2 border-border bg-background"></span>
-            Livre
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-3 h-3 rounded bg-muted/50 border border-muted"></span>
-            Ocupado
-          </span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-primary"></span> Livre</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-muted"></span> Ocupado</span>
         </div>
       </div>
 
-      {/* Morning slots */}
-      <div>
-        <h4 className="text-sm font-medium text-foreground mb-2 flex items-center gap-2">
-          <span className="text-amber-500">☀️</span> Manhã
-        </h4>
-        <div className="grid grid-cols-3 gap-2">
-          {morningSlots.map(renderTimeSlot)}
+      {morningSlots.length > 0 && (
+        <div>
+          <h4 className="text-xs font-semibold uppercase text-muted-foreground mb-2">Manhã</h4>
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">{morningSlots.map(renderTimeSlot)}</div>
         </div>
-      </div>
+      )}
 
-      {/* Afternoon slots */}
-      <div>
-        <h4 className="text-sm font-medium text-foreground mb-2 flex items-center gap-2">
-          <span className="text-orange-500">🌅</span> Tarde
-        </h4>
-        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-          {afternoonSlots.map(renderTimeSlot)}
+      {afternoonSlots.length > 0 && (
+        <div>
+          <h4 className="text-xs font-semibold uppercase text-muted-foreground mb-2 mt-4">Tarde</h4>
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">{afternoonSlots.map(renderTimeSlot)}</div>
         </div>
-      </div>
+      )}
+
+      {nightSlots.length > 0 && (
+        <div>
+          <h4 className="text-xs font-semibold uppercase text-muted-foreground mb-2 mt-4">Noite</h4>
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">{nightSlots.map(renderTimeSlot)}</div>
+        </div>
+      )}
     </div>
   );
 };

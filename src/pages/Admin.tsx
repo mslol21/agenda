@@ -56,6 +56,8 @@ import { db } from "@/lib/firebase";
 import { Appointment, Service, Professional } from "@/types";
 import { services as initialServices, professionals as initialProfessionals } from "@/data/data";
 
+import { AdminSettings } from "@/components/AdminSettings";
+
 const Admin = () => {
   // Auth States
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -310,10 +312,19 @@ const Admin = () => {
   const handleAddProfessional = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProfessional.name) return;
+
+    if (!newProfessional.services || newProfessional.services.length === 0) {
+      toast.error("Selecione os serviços deste profissional");
+      return;
+    }
+
     try {
-      await addDoc(collection(db, "profissionais"), { ...newProfessional, services: [] });
-      setNewProfessional({ name: "", role: "" });
-      toast.success("Profissional adicionado");
+      await addDoc(collection(db, "profissionais"), { 
+          ...newProfessional, 
+          services: newProfessional.services 
+      });
+      setNewProfessional({ name: "", role: "", services: [] });
+      toast.success("Profissional adicionado com sucesso!");
     } catch (e) {
       toast.error("Erro ao adicionar profissional");
     }
@@ -381,10 +392,31 @@ const Admin = () => {
 
       <main className="container mx-auto px-4 py-8">
         <Tabs defaultValue="agenda">
-          <TabsList className="mb-8 grid w-full grid-cols-3 lg:w-[450px]">
-            <TabsTrigger value="agenda">Agenda</TabsTrigger>
-            <TabsTrigger value="services">Serviços</TabsTrigger>
-            <TabsTrigger value="professionals">Profissionais</TabsTrigger>
+          <TabsList className="mb-8 grid w-full grid-cols-4 lg:w-[600px] gap-2 bg-slate-100 p-1 border">
+            <TabsTrigger 
+              value="agenda" 
+              className="data-[state=active]:bg-blue-700 data-[state=active]:text-white hover:bg-white/60 transition-colors"
+            >
+              Agenda
+            </TabsTrigger>
+            <TabsTrigger 
+              value="services"
+              className="data-[state=active]:bg-purple-700 data-[state=active]:text-white hover:bg-white/60 transition-colors"
+            >
+              Serviços
+            </TabsTrigger>
+            <TabsTrigger 
+              value="professionals"
+              className="data-[state=active]:bg-emerald-700 data-[state=active]:text-white hover:bg-white/60 transition-colors"
+            >
+              Profissionais
+            </TabsTrigger>
+            <TabsTrigger 
+              value="config"
+              className="data-[state=active]:bg-amber-600 data-[state=active]:text-white hover:bg-white/60 transition-colors"
+            >
+              Configurações
+            </TabsTrigger>
           </TabsList>
 
           {/* TAB: AGENDA */}
@@ -491,62 +523,82 @@ const Admin = () => {
                 </div>
             )}
 
-            <div className="grid gap-4">
-              {filteredAppointments.map((apt) => (
-                <div key={apt.id} className="bg-card border p-4 rounded-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:shadow-md transition-all">
-                    <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                            {/* Status Badges */}
-                            {apt.status === 'confirmado' && <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-green-200">Confirmado</Badge>}
-                            {apt.status === 'pendente' && <Badge className="bg-yellow-100 text-yellow-700 hover:bg-yellow-100 border-yellow-200">Pendente</Badge>}
-                            {apt.status === 'recusado' && <Badge className="bg-red-100 text-red-700 hover:bg-red-100 border-red-200">Recusado</Badge>}
-                            
-                            <span className="text-sm text-muted-foreground uppercase">• {apt.servico}</span>
-                        </div>
-                        
-                        <h3 className="font-bold text-lg flex items-center gap-2 uppercase">
-                           {apt.nome_cliente}
-                           {apt.whatsapp && (
-                               <a 
-                                 href={`https://wa.me/55${apt.whatsapp.replace(/\D/g, '')}`} 
-                                 target="_blank" 
-                                 rel="noreferrer"
-                                 className="inline-flex items-center justify-center bg-green-500 hover:bg-green-600 text-white rounded-full w-6 h-6"
-                                 title="Abrir WhatsApp"
-                               >
-                                  <Phone className="w-3 h-3 fill-current" />
-                               </a>
-                           )}
-                        </h3>
-
-                        <div className="flex flex-wrap gap-4 mt-2 text-sm text-muted-foreground">
-                            <div className="flex items-center gap-1">
-                                <CalendarIcon className="w-4 h-4"/>
-                                {format(new Date(apt.data_hora), "dd 'de' MMMM", { locale: ptBR })}
-                            </div>
-                            <div className="flex items-center gap-1">
-                                <Clock className="w-4 h-4"/>
-                                {format(new Date(apt.data_hora), "HH:mm")}
-                            </div>
-                            {apt.profissional && (
-                                <div className="flex items-center gap-1 uppercase">
-                                    <User className="w-4 h-4"/>
-                                    {apt.profissional}
+            <div className="space-y-8">
+              {Object.entries(
+                filteredAppointments.reduce((groups, apt) => {
+                  const profName = apt.profissional || "Sem profissional";
+                  if (!groups[profName]) groups[profName] = [];
+                  groups[profName].push(apt);
+                  return groups;
+                }, {} as Record<string, Appointment[]>)
+              ).sort(([a], [b]) => a.localeCompare(b)) // Sort Professionals Alphabetically
+              .map(([profName, profApts]) => (
+                <div key={profName} className="bg-slate-50 border rounded-xl overflow-hidden">
+                   <div className="bg-white border-b px-4 py-3 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                         <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
+                            {profName.charAt(0).toUpperCase()}
+                         </div>
+                         <h3 className="font-bold text-lg uppercase text-slate-800">{profName}</h3>
+                      </div>
+                      <Badge variant="secondary" className="bg-slate-100">{profApts.length} agendamentos</Badge>
+                   </div>
+                   
+                   <div className="p-4 grid gap-3">
+                     {profApts
+                        .sort((a, b) => new Date(a.data_hora).getTime() - new Date(b.data_hora).getTime()) // Sort by Time
+                        .map((apt) => (
+                        <div key={apt.id} className="bg-white border p-4 rounded-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:shadow-sm transition-all">
+                            <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                    {/* Status Badges */}
+                                    {apt.status === 'confirmado' && <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-green-200">Confirmado</Badge>}
+                                    {apt.status === 'pendente' && <Badge className="bg-yellow-100 text-yellow-700 hover:bg-yellow-100 border-yellow-200">Pendente</Badge>}
+                                    {apt.status === 'recusado' && <Badge className="bg-red-100 text-red-700 hover:bg-red-100 border-red-200">Recusado</Badge>}
+                                    
+                                    <span className="text-sm text-muted-foreground uppercase">• {apt.servico}</span>
                                 </div>
-                            )}
+                                
+                                <h3 className="font-bold text-lg flex items-center gap-2 uppercase">
+                                  {apt.nome_cliente}
+                                  {apt.whatsapp && (
+                                      <a 
+                                        href={`https://wa.me/55${apt.whatsapp.replace(/\D/g, '')}`} 
+                                        target="_blank" 
+                                        rel="noreferrer"
+                                        className="inline-flex items-center justify-center bg-green-500 hover:bg-green-600 text-white rounded-full w-6 h-6"
+                                        title="Abrir WhatsApp"
+                                      >
+                                          <Phone className="w-3 h-3 fill-current" />
+                                      </a>
+                                  )}
+                                </h3>
+
+                                <div className="flex flex-wrap gap-4 mt-2 text-sm text-muted-foreground">
+                                    <div className="flex items-center gap-1">
+                                        <CalendarIcon className="w-4 h-4"/>
+                                        {format(new Date(apt.data_hora), "dd 'de' MMMM", { locale: ptBR })}
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                        <Clock className="w-4 h-4"/>
+                                        <span className="font-semibold text-foreground">{format(new Date(apt.data_hora), "HH:mm")}</span>
+                                    </div>
+                                </div>
+                                
+                            </div>
+                            
+                            <div className="flex items-center gap-2 w-full md:w-auto border-t md:border-t-0 pt-4 md:pt-0 mt-2 md:mt-0">
+                                {apt.status === 'pendente' && (
+                                    <>
+                                        <Button size="sm" className="flex-1 bg-green-600 hover:bg-green-700 text-white" onClick={() => updateStatus(apt.id!, 'confirmado')}><Check className="w-4 h-4 mr-1"/> Aceitar</Button>
+                                        <Button size="sm" variant="outline" className="flex-1 text-red-600 hover:bg-red-50 hover:text-red-700 border-red-200" onClick={() => updateStatus(apt.id!, 'recusado')}><X className="w-4 h-4 mr-1"/> Recusar</Button>
+                                    </>
+                                )}
+                                <Button size="icon" variant="ghost" className="text-muted-foreground hover:text-destructive" onClick={() => deleteAppointment(apt.id!)}><Trash2 className="w-4 h-4"/></Button>
+                            </div>
                         </div>
-                        
-                    </div>
-                    
-                    <div className="flex items-center gap-2 w-full md:w-auto border-t md:border-t-0 pt-4 md:pt-0 mt-2 md:mt-0">
-                        {apt.status === 'pendente' && (
-                            <>
-                                <Button size="sm" className="flex-1 bg-green-600 hover:bg-green-700 text-white" onClick={() => updateStatus(apt.id!, 'confirmado')}><Check className="w-4 h-4 mr-1"/> Aceitar</Button>
-                                <Button size="sm" variant="outline" className="flex-1 text-red-600 hover:bg-red-50 hover:text-red-700 border-red-200" onClick={() => updateStatus(apt.id!, 'recusado')}><X className="w-4 h-4 mr-1"/> Recusar</Button>
-                            </>
-                        )}
-                        <Button size="icon" variant="ghost" className="text-muted-foreground hover:text-destructive" onClick={() => deleteAppointment(apt.id!)}><Trash2 className="w-4 h-4"/></Button>
-                    </div>
+                     ))}
+                   </div>
                 </div>
               ))}
             </div>
@@ -660,6 +712,37 @@ const Admin = () => {
                                 <span className="text-sm text-muted-foreground uppercase">{newProfessional.color || "Padrão"}</span>
                             </div>
                         </div>
+
+                        <div>
+                            <Label className="uppercase mb-2 block">Serviços Realizados</Label>
+                            <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto border p-2 rounded-md bg-background">
+                                {services.map(svc => (
+                                    <div key={svc.id} className="flex items-center space-x-2">
+                                        <input 
+                                            type="checkbox" 
+                                            id={`svc-${svc.id}`}
+                                            className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                            checked={newProfessional.services?.includes(svc.name) || false}
+                                            onChange={(e) => {
+                                                const currentServices = newProfessional.services || [];
+                                                if (e.target.checked) {
+                                                    setNewProfessional({ ...newProfessional, services: [...currentServices, svc.name] });
+                                                } else {
+                                                    setNewProfessional({ ...newProfessional, services: currentServices.filter(s => s !== svc.name) });
+                                                }
+                                            }}
+                                        />
+                                        <label 
+                                            htmlFor={`svc-${svc.id}`} 
+                                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 uppercase cursor-pointer"
+                                        >
+                                            {svc.name}
+                                        </label>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
                         <Button type="submit" className="w-full uppercase"><Plus className="w-4 h-4 mr-2"/> Cadastrar</Button>
                     </form>
                 </div>
@@ -668,12 +751,33 @@ const Admin = () => {
                      <h3 className="text-lg font-semibold uppercase">Equipe ({professionals.length})</h3>
                      <div className="space-y-2">
                         {professionals.map(prof => (
-                            <div key={prof.id} className="flex justify-between items-center p-3 bg-card border rounded-md">
-                                <div>
-                                    <p className="font-medium uppercase">{prof.name}</p>
-                                    <p className="text-xs text-muted-foreground uppercase">{prof.role}</p>
+                            <div key={prof.id} className="flex flex-col p-3 bg-card border rounded-md gap-2">
+                                <div className="flex justify-between items-start">
+                                    <div className="flex items-center gap-3">
+                                        <div 
+                                            className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs"
+                                            style={{ backgroundColor: prof.color || '#0f172a' }}
+                                        >
+                                            {prof.name.charAt(0)}
+                                        </div>
+                                        <div>
+                                            <p className="font-medium uppercase">{prof.name}</p>
+                                            <p className="text-xs text-muted-foreground uppercase">{prof.role}</p>
+                                        </div>
+                                    </div>
+                                    <Button size="icon" variant="ghost" onClick={() => handleDeleteProfessional(prof.id!)}><Trash2 className="w-4 h-4 text-destructive"/></Button>
                                 </div>
-                                <Button size="icon" variant="ghost" onClick={() => handleDeleteProfessional(prof.id!)}><Trash2 className="w-4 h-4 text-destructive"/></Button>
+                                <div className="flex flex-wrap gap-1">
+                                    {prof.services && prof.services.length > 0 ? (
+                                        prof.services.map(s => (
+                                            <Badge key={s} variant="secondary" className="text-[10px] uppercase bg-slate-100 text-slate-600">
+                                                {s}
+                                            </Badge>
+                                        ))
+                                    ) : (
+                                        <span className="text-[10px] text-muted-foreground uppercase italic">Faz tudo (Padrão)</span>
+                                    )}
+                                </div>
                             </div>
                         ))}
                      </div>
@@ -681,6 +785,10 @@ const Admin = () => {
              </div>
           </TabsContent>
 
+          {/* TAB: CONFIG */}
+          <TabsContent value="config">
+            <AdminSettings />
+          </TabsContent>
         </Tabs>
       </main>
     </div>

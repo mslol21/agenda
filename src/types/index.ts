@@ -15,10 +15,17 @@ export interface Professional {
   color?: string; // Hex color for customization
 }
 
+export interface DayConfig {
+  isOpen: boolean;
+  startTime: string;
+  endTime: string;
+}
+
 export interface Settings {
-  openTime: string;
-  closeTime: string;
-  workDays: number[]; // 0=Sunday, 1=Monday...
+  days: {
+    [key: string]: DayConfig; // "0" for Sunday, "1" for Monday, etc.
+  };
+  appointmentInterval: number; // minutes
 }
 
 export interface Appointment {
