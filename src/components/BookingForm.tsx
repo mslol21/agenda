@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -17,9 +17,9 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { db } from "@/lib/firebase";
-import { collection, addDoc } from "firebase/firestore";
-import { services, professionals } from "@/data/data";
+import { collection, addDoc, getDocs } from "firebase/firestore";
 import { TimeSlotPicker } from "./TimeSlotPicker";
+import { Service, Professional } from "@/types";
 
 const bookingSchema = z.object({
   nome: z.string().min(2, "Nome deve ter pelo menos 2 caracteres").max(100),
@@ -43,6 +43,27 @@ export const BookingForm = ({ selectedService, selectedProfessional, onSuccess }
   const [date, setDate] = useState<Date>();
   const [time, setTime] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  const [services, setServices] = useState<Service[]>([]);
+  const [professionals, setProfessionals] = useState<Professional[]>([]);
+
+  // Fetch data
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [servicesSnap, professionalsSnap] = await Promise.all([
+             getDocs(collection(db, "servicos")),
+             getDocs(collection(db, "profissionais"))
+        ]);
+        
+        setServices(servicesSnap.docs.map(d => ({ id: d.id, ...d.data() } as Service)));
+        setProfessionals(professionalsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Professional)));
+      } catch (error) {
+        console.error("Error fetching data:", error);
+      }
+    };
+    fetchData();
+  }, []);
 
   const {
     register,

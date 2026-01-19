@@ -4,7 +4,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   ArrowLeft,
-  Calendar,
+  Calendar as CalendarIcon,
   Check,
   Clock,
   Loader2,
@@ -25,6 +25,19 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   collection, 
@@ -62,6 +75,53 @@ const Admin = () => {
   // New Item States
   const [newService, setNewService] = useState<Partial<Service>>({ name: "", price: "", duration: "" });
   const [newProfessional, setNewProfessional] = useState<Partial<Professional>>({ name: "", role: "" });
+
+  // Filter States
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>();
+
+  // Manual Booking States
+  const [openManual, setOpenManual] = useState(false);
+  const [manualBooking, setManualBooking] = useState({
+      nome: "",
+      servico: "",
+      profissional: "",
+      date: "",
+      time: ""
+  });
+
+  // Filter Logic
+  const filteredAppointments = appointments.filter(apt => {
+      if (!selectedDate) return true;
+      const aptDate = new Date(apt.data_hora);
+      return (
+          aptDate.getDate() === selectedDate.getDate() &&
+          aptDate.getMonth() === selectedDate.getMonth() &&
+          aptDate.getFullYear() === selectedDate.getFullYear()
+      );
+  });
+  
+  // Manual Submit
+  const handleManualSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      try {
+          const dateTime = new Date(`${manualBooking.date}T${manualBooking.time}`);
+          await addDoc(collection(db, "agendamentos"), {
+              nome_cliente: manualBooking.nome,
+              email: "manual@admin.com", // Placeholder
+              whatsapp: "",
+              servico: manualBooking.servico,
+              profissional: manualBooking.profissional,
+              data_hora: dateTime.toISOString(),
+              status: "confirmado", // Manual bookings are auto-confirmed usually? Pending for now to match flow
+              created_at: new Date().toISOString()
+          });
+          toast.success("Agendamento criado!");
+          setOpenManual(false);
+          setManualBooking({ nome: "", servico: "", profissional: "", date: "", time: "" });
+      } catch (e) {
+          toast.error("Erro ao criar agendamento");
+      }
+  };
 
   useEffect(() => {
     const isAuth = sessionStorage.getItem("admin_logged_in") === "true";
@@ -195,7 +255,25 @@ const Admin = () => {
       const docRef = doc(db, "agendamentos", id);
       await updateDoc(docRef, { status });
       toast.success(`Agendamento ${status}`);
+
+      // Auto-send WhatsApp if confirmed
+      if (status === 'confirmado') {
+        const appointment = appointments.find(a => a.id === id);
+        if (appointment && appointment.whatsapp) {
+            const phone = appointment.whatsapp.replace(/\D/g, '');
+            const date = new Date(appointment.data_hora);
+            const formattedDate = format(date, "dd 'de' MMMM", { locale: ptBR });
+            const formattedTime = format(date, "HH:mm");
+            
+            const message = `Olá, ${appointment.nome_cliente}! Seu agendamento de *${appointment.servico}* com *${appointment.profissional}* para dia *${formattedDate} às ${formattedTime}* foi CONFIRMADO! Estamos te esperando.`;
+            
+            // Use web.whatsapp.com to force Web interface
+            window.open(`https://web.whatsapp.com/send?phone=55${phone}&text=${encodeURIComponent(message)}`, '_blank');
+        }
+      }
+
     } catch (e) {
+      console.error(e);
       toast.error("Erro ao atualizar status");
     }
   };
@@ -303,52 +381,171 @@ const Admin = () => {
 
       <main className="container mx-auto px-4 py-8">
         <Tabs defaultValue="agenda">
-          <TabsList className="mb-8 grid w-full grid-cols-4 lg:w-[600px]">
+          <TabsList className="mb-8 grid w-full grid-cols-3 lg:w-[450px]">
             <TabsTrigger value="agenda">Agenda</TabsTrigger>
             <TabsTrigger value="services">Serviços</TabsTrigger>
             <TabsTrigger value="professionals">Profissionais</TabsTrigger>
-            <TabsTrigger value="settings">Config</TabsTrigger>
           </TabsList>
 
           {/* TAB: AGENDA */}
           <TabsContent value="agenda" className="space-y-4">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-semibold">Agendamentos</h2>
-              <Badge variant="secondary">{appointments.length} Total</Badge>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+              <div className="flex items-center gap-4">
+                 <h2 className="text-2xl font-semibold">Agendamentos</h2>
+                 <Badge variant="secondary">{filteredAppointments.length} de {appointments.length}</Badge>
+              </div>
+              
+              <div className="flex items-center gap-2 bg-card border p-1 rounded-lg">
+                 <Button 
+                   variant={!selectedDate ? "secondary" : "ghost"} 
+                   size="sm" 
+                   onClick={() => setSelectedDate(undefined)}
+                   className="text-xs"
+                 >
+                    Todos
+                 </Button>
+                 <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant={selectedDate ? "secondary" : "ghost"} size="sm" className={cn("text-xs justify-start text-left font-normal", !selectedDate && "text-muted-foreground")}>
+                        <CalendarIcon className="mr-2 h-3 w-3" />
+                        {selectedDate ? format(selectedDate, "dd/MM") : "Filtrar Data"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="end">
+                      <Calendar
+                        mode="single"
+                        selected={selectedDate}
+                        onSelect={setSelectedDate}
+                        initialFocus
+                        locale={ptBR}
+                      />
+                    </PopoverContent>
+                 </Popover>
+                 {selectedDate && <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelectedDate(undefined)}><X className="h-3 w-3"/></Button>}
+              </div>
             </div>
             
             {loadingData && <Loader2 className="animate-spin mx-auto" />}
             
-            {!loadingData && appointments.length === 0 && (
-                <div className="text-center py-10 text-muted-foreground">Nenhum agendamento encontrado.</div>
+            {!loadingData && filteredAppointments.length === 0 && (
+                <div className="text-center py-16 text-muted-foreground border-2 border-dashed rounded-xl bg-card/50">
+                   <div className="mx-auto w-12 h-12 bg-muted rounded-full flex items-center justify-center mb-4">
+                      <CalendarIcon className="w-6 h-6 opacity-50"/>
+                   </div>
+                   <h3 className="text-lg font-medium text-foreground">Nenhum agendamento encontrado</h3>
+                   <p className="text-sm mb-6 max-w-xs mx-auto">Não há horários agendados para este filtro. Deseja adicionar um manualmente?</p>
+                   
+                   <Dialog open={openManual} onOpenChange={setOpenManual}>
+                      <DialogTrigger asChild>
+                          <Button><Plus className="w-4 h-4 mr-2"/> Criar Agendamento Manual</Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                          <DialogHeader>
+                              <DialogTitle>Novo Agendamento Manual</DialogTitle>
+                          </DialogHeader>
+                          <form onSubmit={handleManualSubmit} className="space-y-4">
+                              <div>
+                                  <Label>Nome do Cliente</Label>
+                                  <Input required value={manualBooking.nome} onChange={e => setManualBooking({...manualBooking, nome: e.target.value})} placeholder="Ex: João da Silva"/>
+                              </div>
+                              <div className="grid grid-cols-2 gap-4">
+                                  <div>
+                                     <Label>Serviço</Label>
+                                     <select 
+                                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                        value={manualBooking.servico}
+                                        onChange={e => setManualBooking({...manualBooking, servico: e.target.value})}
+                                        required
+                                     >
+                                        <option value="">Selecione...</option>
+                                        {services.map(s => <option key={s.id} value={s.name}>{s.name.toUpperCase()}</option>)}
+                                     </select>
+                                  </div>
+                                  <div>
+                                     <Label>Profissional</Label>
+                                     <select 
+                                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                        value={manualBooking.profissional}
+                                        onChange={e => setManualBooking({...manualBooking, profissional: e.target.value})}
+                                        required
+                                     >
+                                        <option value="">Selecione...</option>
+                                        {professionals.map(p => <option key={p.id} value={p.name}>{p.name.toUpperCase()}</option>)}
+                                     </select>
+                                  </div>
+                              </div>
+                              <div className="grid grid-cols-2 gap-4">
+                                  <div>
+                                      <Label>Data</Label>
+                                      <Input type="date" required value={manualBooking.date} onChange={e => setManualBooking({...manualBooking, date: e.target.value})} />
+                                  </div>
+                                  <div>
+                                      <Label>Hora</Label>
+                                      <Input type="time" required value={manualBooking.time} onChange={e => setManualBooking({...manualBooking, time: e.target.value})} />
+                                  </div>
+                              </div>
+                              <Button type="submit" className="w-full">Criar Agendamento</Button>
+                          </form>
+                      </DialogContent>
+                   </Dialog>
+                </div>
             )}
 
             <div className="grid gap-4">
-              {appointments.map((apt) => (
-                <div key={apt.id} className="bg-card border p-4 rounded-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                    <div>
-                        <div className="flex items-center gap-2">
-                            <h3 className="font-bold">{apt.servico}</h3>
-                            <Badge variant={apt.status === 'confirmado' ? 'default' : apt.status === 'recusado' ? 'destructive' : 'outline'}>
-                                {apt.status}
-                            </Badge>
+              {filteredAppointments.map((apt) => (
+                <div key={apt.id} className="bg-card border p-4 rounded-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:shadow-md transition-all">
+                    <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                            {/* Status Badges */}
+                            {apt.status === 'confirmado' && <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-green-200">Confirmado</Badge>}
+                            {apt.status === 'pendente' && <Badge className="bg-yellow-100 text-yellow-700 hover:bg-yellow-100 border-yellow-200">Pendente</Badge>}
+                            {apt.status === 'recusado' && <Badge className="bg-red-100 text-red-700 hover:bg-red-100 border-red-200">Recusado</Badge>}
+                            
+                            <span className="text-sm text-muted-foreground uppercase">• {apt.servico}</span>
                         </div>
-                        <p className="text-muted-foreground text-sm">
-                            {format(new Date(apt.data_hora), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-                            {apt.profissional && ` • com ${apt.profissional}`}
-                        </p>
-                        <p className="text-sm mt-1">
-                            {apt.nome_cliente} • {apt.whatsapp}
-                        </p>
+                        
+                        <h3 className="font-bold text-lg flex items-center gap-2 uppercase">
+                           {apt.nome_cliente}
+                           {apt.whatsapp && (
+                               <a 
+                                 href={`https://wa.me/55${apt.whatsapp.replace(/\D/g, '')}`} 
+                                 target="_blank" 
+                                 rel="noreferrer"
+                                 className="inline-flex items-center justify-center bg-green-500 hover:bg-green-600 text-white rounded-full w-6 h-6"
+                                 title="Abrir WhatsApp"
+                               >
+                                  <Phone className="w-3 h-3 fill-current" />
+                               </a>
+                           )}
+                        </h3>
+
+                        <div className="flex flex-wrap gap-4 mt-2 text-sm text-muted-foreground">
+                            <div className="flex items-center gap-1">
+                                <CalendarIcon className="w-4 h-4"/>
+                                {format(new Date(apt.data_hora), "dd 'de' MMMM", { locale: ptBR })}
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <Clock className="w-4 h-4"/>
+                                {format(new Date(apt.data_hora), "HH:mm")}
+                            </div>
+                            {apt.profissional && (
+                                <div className="flex items-center gap-1 uppercase">
+                                    <User className="w-4 h-4"/>
+                                    {apt.profissional}
+                                </div>
+                            )}
+                        </div>
+                        
                     </div>
-                    <div className="flex gap-2">
+                    
+                    <div className="flex items-center gap-2 w-full md:w-auto border-t md:border-t-0 pt-4 md:pt-0 mt-2 md:mt-0">
                         {apt.status === 'pendente' && (
                             <>
-                                <Button size="sm" onClick={() => updateStatus(apt.id!, 'confirmado')}><Check className="w-4 h-4 mr-1"/> Confirmar</Button>
-                                <Button size="sm" variant="outline" onClick={() => updateStatus(apt.id!, 'recusado')}><X className="w-4 h-4 mr-1"/> Recusar</Button>
+                                <Button size="sm" className="flex-1 bg-green-600 hover:bg-green-700 text-white" onClick={() => updateStatus(apt.id!, 'confirmado')}><Check className="w-4 h-4 mr-1"/> Aceitar</Button>
+                                <Button size="sm" variant="outline" className="flex-1 text-red-600 hover:bg-red-50 hover:text-red-700 border-red-200" onClick={() => updateStatus(apt.id!, 'recusado')}><X className="w-4 h-4 mr-1"/> Recusar</Button>
                             </>
                         )}
-                        <Button size="sm" variant="ghost" className="text-destructive" onClick={() => deleteAppointment(apt.id!)}><Trash2 className="w-4 h-4"/></Button>
+                        <Button size="icon" variant="ghost" className="text-muted-foreground hover:text-destructive" onClick={() => deleteAppointment(apt.id!)}><Trash2 className="w-4 h-4"/></Button>
                     </div>
                 </div>
               ))}
@@ -359,33 +556,66 @@ const Admin = () => {
           <TabsContent value="services">
              <div className="grid md:grid-cols-2 gap-8">
                 <div className="space-y-4">
-                    <h3 className="text-lg font-semibold">Adicionar Serviço</h3>
+                    <h3 className="text-lg font-semibold uppercase">Adicionar Serviço</h3>
                     <form onSubmit={handleAddService} className="space-y-3 bg-card p-4 rounded-lg border">
                         <div>
-                            <Label>Nome</Label>
-                            <Input value={newService.name} onChange={e => setNewService({...newService, name: e.target.value})} placeholder="Ex: Corte de Cabelo" />
+                            <Label className="uppercase">Nome</Label>
+                            <Input 
+                                value={newService.name} 
+                                onChange={e => setNewService({...newService, name: e.target.value.toUpperCase()})} 
+                                placeholder="Ex: CORTE DE CABELO" 
+                            />
+                        </div>
+                        <div>
+                             <Label className="uppercase">Descrição</Label>
+                             <Input 
+                                 value={newService.description || ""} 
+                                 onChange={e => setNewService({...newService, description: e.target.value.toUpperCase()})} 
+                                 placeholder="Ex: CORTE MODERNO" 
+                             />
                         </div>
                         <div className="grid grid-cols-2 gap-2">
                              <div>
-                                <Label>Preço</Label>
-                                <Input value={newService.price} onChange={e => setNewService({...newService, price: e.target.value})} placeholder="R$ 50" />
+                                <Label className="uppercase">Preço</Label>
+                                <Input 
+                                    value={newService.price} 
+                                    onChange={e => {
+                                        // Simple currency masking
+                                        let value = e.target.value.replace(/\D/g, "");
+                                        value = (Number(value) / 100).toLocaleString("pt-BR", {
+                                            style: "currency",
+                                            currency: "BRL"
+                                        });
+                                        setNewService({...newService, price: value});
+                                    }} 
+                                    placeholder="R$ 0,00" 
+                                />
                              </div>
                              <div>
-                                <Label>Duração</Label>
-                                <Input value={newService.duration} onChange={e => setNewService({...newService, duration: e.target.value})} placeholder="45 min" />
+                                <Label className="uppercase">Duração (minutos)</Label>
+                                <div className="flex items-center gap-2">
+                                    <Input 
+                                        type="number"
+                                        value={newService.duration?.replace(/\D/g, "") || ""} 
+                                        onChange={e => setNewService({...newService, duration: `${e.target.value} min`})} 
+                                        placeholder="Ex: 45" 
+                                    />
+                                    <span className="text-sm text-muted-foreground whitespace-nowrap">min</span>
+                                </div>
                              </div>
                         </div>
-                        <Button type="submit" className="w-full"><Plus className="w-4 h-4 mr-2"/> Adicionar</Button>
+                        <Button type="submit" className="w-full uppercase"><Plus className="w-4 h-4 mr-2"/> Adicionar</Button>
                     </form>
                 </div>
                 
                 <div className="space-y-4">
-                     <h3 className="text-lg font-semibold">Lista de Serviços ({services.length})</h3>
+                     <h3 className="text-lg font-semibold uppercase">Lista de Serviços ({services.length})</h3>
                      <div className="space-y-2">
                         {services.map(svc => (
                             <div key={svc.id} className="flex justify-between items-center p-3 bg-card border rounded-md">
                                 <div>
-                                    <p className="font-medium">{svc.name}</p>
+                                    <p className="font-medium uppercase">{svc.name}</p>
+                                    <p className="text-xs text-muted-foreground uppercase">{svc.description}</p>
                                     <p className="text-xs text-muted-foreground">{svc.price} • {svc.duration}</p>
                                 </div>
                                 <Button size="icon" variant="ghost" onClick={() => handleDeleteService(svc.id!)}><Trash2 className="w-4 h-4 text-destructive"/></Button>
@@ -400,28 +630,48 @@ const Admin = () => {
           <TabsContent value="professionals">
             <div className="grid md:grid-cols-2 gap-8">
                 <div className="space-y-4">
-                    <h3 className="text-lg font-semibold">Novo Profissional</h3>
+                    <h3 className="text-lg font-semibold uppercase">Novo Profissional</h3>
                     <form onSubmit={handleAddProfessional} className="space-y-3 bg-card p-4 rounded-lg border">
                         <div>
-                            <Label>Nome</Label>
-                            <Input value={newProfessional.name} onChange={e => setNewProfessional({...newProfessional, name: e.target.value})} placeholder="Ex: Ana Silva" />
+                            <Label className="uppercase">Nome</Label>
+                            <Input 
+                                value={newProfessional.name} 
+                                onChange={e => setNewProfessional({...newProfessional, name: e.target.value.toUpperCase()})} 
+                                placeholder="Ex: ANA SILVA" 
+                            />
                         </div>
                         <div>
-                            <Label>Cargo / Especialidade</Label>
-                            <Input value={newProfessional.role} onChange={e => setNewProfessional({...newProfessional, role: e.target.value})} placeholder="Ex: Manicure" />
+                            <Label className="uppercase">Cargo / Especialidade</Label>
+                            <Input 
+                                value={newProfessional.role} 
+                                onChange={e => setNewProfessional({...newProfessional, role: e.target.value.toUpperCase()})} 
+                                placeholder="Ex: MANICURE" 
+                            />
                         </div>
-                        <Button type="submit" className="w-full"><Plus className="w-4 h-4 mr-2"/> Cadastrar</Button>
+                        <div>
+                            <Label className="uppercase">Cor do Cartão</Label>
+                            <div className="flex items-center gap-2">
+                                <Input 
+                                    type="color"
+                                    value={newProfessional.color || "#0f172a"} 
+                                    onChange={e => setNewProfessional({...newProfessional, color: e.target.value})} 
+                                    className="w-12 h-10 p-1 cursor-pointer"
+                                />
+                                <span className="text-sm text-muted-foreground uppercase">{newProfessional.color || "Padrão"}</span>
+                            </div>
+                        </div>
+                        <Button type="submit" className="w-full uppercase"><Plus className="w-4 h-4 mr-2"/> Cadastrar</Button>
                     </form>
                 </div>
                 
                 <div className="space-y-4">
-                     <h3 className="text-lg font-semibold">Equipe ({professionals.length})</h3>
+                     <h3 className="text-lg font-semibold uppercase">Equipe ({professionals.length})</h3>
                      <div className="space-y-2">
                         {professionals.map(prof => (
                             <div key={prof.id} className="flex justify-between items-center p-3 bg-card border rounded-md">
                                 <div>
-                                    <p className="font-medium">{prof.name}</p>
-                                    <p className="text-xs text-muted-foreground">{prof.role}</p>
+                                    <p className="font-medium uppercase">{prof.name}</p>
+                                    <p className="text-xs text-muted-foreground uppercase">{prof.role}</p>
                                 </div>
                                 <Button size="icon" variant="ghost" onClick={() => handleDeleteProfessional(prof.id!)}><Trash2 className="w-4 h-4 text-destructive"/></Button>
                             </div>
@@ -431,24 +681,6 @@ const Admin = () => {
              </div>
           </TabsContent>
 
-          {/* TAB: SETTINGS */}
-          <TabsContent value="settings">
-            <div className="bg-card p-6 rounded-lg border text-center text-muted-foreground space-y-6">
-                <div>
-                  <SettingsIcon className="w-10 h-10 mx-auto mb-4 opacity-20" />
-                  <h3 className="text-lg font-medium">Configurações de Horário</h3>
-                  <p>Funcionalidade em desenvolvimento.</p>
-                </div>
-                
-                <div className="border-t pt-6">
-                  <h4 className="text-sm font-medium mb-2">Ações de Desenvolvimento</h4>
-                  <Button onClick={handleSeedData} variant="outline" className="gap-2">
-                    <RefreshCw className="w-4 h-4" />
-                    Popular Banco de Dados (Seed)
-                  </Button>
-                </div>
-            </div>
-          </TabsContent>
         </Tabs>
       </main>
     </div>

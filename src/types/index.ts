@@ -12,6 +12,7 @@ export interface Professional {
   name: string;
   role: string;
   services: string[]; // Service names or IDs
+  color?: string; // Hex color for customization
 }
 
 export interface Settings {
