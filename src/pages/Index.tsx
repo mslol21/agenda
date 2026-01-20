@@ -7,19 +7,23 @@ import { ProfessionalsSection } from "@/components/ProfessionalsSection";
 import { Link } from "react-router-dom";
 import { Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { BookingDetails } from "@/types";
 
 const Index = () => {
   const [showSuccess, setShowSuccess] = useState(false);
   const [selectedService, setSelectedService] = useState<string>("");
   const [selectedProfessional, setSelectedProfessional] = useState<string>("");
+  const [bookingDetails, setBookingDetails] = useState<BookingDetails | null>(null);
 
-  const handleBookingSuccess = () => {
+  const handleBookingSuccess = (details: BookingDetails) => {
+    setBookingDetails(details);
     setShowSuccess(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleNewBooking = () => {
     setShowSuccess(false);
+    setBookingDetails(null);
     setSelectedService("");
     setSelectedProfessional("");
   };
@@ -56,8 +60,8 @@ const Index = () => {
         </Link>
       </div>
 
-      {showSuccess ? (
-        <BookingSuccess onNewBooking={handleNewBooking} />
+      {showSuccess && bookingDetails ? (
+        <BookingSuccess onNewBooking={handleNewBooking} bookingDetails={bookingDetails} />
       ) : (
         <>
           <HeroSection />

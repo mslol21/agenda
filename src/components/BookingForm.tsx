@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { format } from "date-fns";
@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Popover,
   PopoverContent,
@@ -19,16 +20,21 @@ import {
 import { db } from "@/lib/firebase";
 import { collection, addDoc, getDocs, doc, getDoc } from "firebase/firestore";
 import { TimeSlotPicker } from "./TimeSlotPicker";
-import { Service, Professional, Settings } from "@/types";
+import { Service, Professional, Settings, BookingDetails } from "@/types";
 
 const bookingSchema = z.object({
-  nome: z.string().min(2, "Nome deve ter pelo menos 2 caracteres").max(100),
-  email: z.string().email("E-mail inválido").max(255),
+  nome: z.string().min(3, "Nome deve ter pelo menos 3 caracteres").max(100),
+  email: z.string().optional().refine(
+    (val) => !val || z.string().email().safeParse(val).success,
+    { message: "E-mail inválido" }
+  ),
   whatsapp: z
     .string()
-    .min(10, "WhatsApp deve ter pelo menos 10 dígitos")
-    .max(15)
-    .regex(/^[0-9]+$/, "Apenas números"),
+    .min(10, "Telefone deve ter pelo menos 10 dígitos")
+    .max(20)
+    .regex(/^[\d\s\(\)\-\+]+$/, "Formato de telefone inválido"),
+  receberLembretes: z.boolean().optional(),
+  primeiraVez: z.boolean().optional(),
 });
 
 type BookingFormData = z.infer<typeof bookingSchema>;
@@ -36,13 +42,14 @@ type BookingFormData = z.infer<typeof bookingSchema>;
 interface BookingFormProps {
   selectedService: string;
   selectedProfessional: string;
-  onSuccess: () => void;
+  onSuccess: (bookingDetails: BookingDetails) => void;
 }
 
 export const BookingForm = ({ selectedService, selectedProfessional, onSuccess }: BookingFormProps) => {
   const [date, setDate] = useState<Date>();
   const [time, setTime] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
   
   const [services, setServices] = useState<Service[]>([]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
@@ -88,6 +95,7 @@ export const BookingForm = ({ selectedService, selectedProfessional, onSuccess }
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors },
   } = useForm<BookingFormData>({
     resolver: zodResolver(bookingSchema),
@@ -97,6 +105,8 @@ export const BookingForm = ({ selectedService, selectedProfessional, onSuccess }
   const selectedProfessionalData = professionals.find((p) => p.id === selectedProfessional);
 
   const onSubmit = async (data: BookingFormData) => {
+    console.log("Form submitted with data:", data);
+    
     if (!selectedService) {
       toast.error("Por favor, selecione um serviço");
       return;
@@ -125,19 +135,43 @@ export const BookingForm = ({ selectedService, selectedProfessional, onSuccess }
       const dateTime = new Date(date);
       dateTime.setHours(hours, minutes, 0, 0);
 
-      await addDoc(collection(db, "agendamentos"), {
+      const bookingData = {
         nome_cliente: data.nome,
-        email: data.email,
+        email: data.email || "",
         whatsapp: data.whatsapp,
         servico: selectedServiceData?.name || selectedService,
         profissional: selectedProfessionalData?.name || selectedProfessional,
         data_hora: dateTime.toISOString(),
         status: "pendente",
+        receber_lembretes: data.receberLembretes || false,
+        primeira_vez: data.primeiraVez || false,
         created_at: new Date().toISOString()
-      });
+      };
 
+      console.log("Saving booking to Firestore:", bookingData);
+      
+      const docRef = await addDoc(collection(db, "agendamentos"), bookingData);
+
+      console.log("Booking saved successfully with ID:", docRef.id);
+      
+      // Create booking details for success page
+      const bookingDetails: BookingDetails = {
+        bookingId: docRef.id,
+        clientName: data.nome,
+        phone: data.whatsapp,
+        email: data.email,
+        serviceName: selectedServiceData?.name || selectedService,
+        professionalName: selectedProfessionalData?.name || selectedProfessional,
+        date: date,
+        time: time,
+        price: selectedServiceData?.price || "",
+        duration: selectedServiceData?.duration || "",
+        receberLembretes: data.receberLembretes || false,
+        primeiraVez: data.primeiraVez || false,
+      };
+      
       toast.success("Agendamento solicitado com sucesso!");
-      onSuccess();
+      onSuccess(bookingDetails);
     } catch (error) {
       console.error("Error creating booking:", error);
       toast.error("Erro ao criar agendamento. Tente novamente.");
@@ -177,73 +211,149 @@ export const BookingForm = ({ selectedService, selectedProfessional, onSuccess }
           </div>
 
           {(selectedServiceData && selectedProfessionalData) && (
-            <div className="mb-6 p-4 rounded-lg bg-accent border border-primary/20 animate-scale-in">
-              <div className="flex items-center justify-between">
-                <div>
-                   <p className="text-sm text-muted-foreground mb-1">Resumo do pedido:</p>
-                   <p className="font-semibold text-foreground text-lg">
-                    {selectedServiceData.name}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    Profissional: {selectedProfessionalData.name}
-                  </p>
+            <div className="mb-6 p-5 rounded-lg bg-accent border border-primary/20 animate-scale-in">
+              <div className="space-y-3">
+                {/* Service and Price */}
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <p className="font-bold text-foreground text-xl uppercase tracking-tight">
+                      {selectedServiceData.name}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-bold text-primary text-2xl">{selectedServiceData.price}</p>
+                  </div>
                 </div>
-                <div className="text-right">
-                   <p className="font-bold text-primary text-xl">{selectedServiceData.price}</p>
-                   <p className="text-xs text-muted-foreground">{selectedServiceData.duration}</p>
+                
+                {/* Professional and Duration */}
+                <div className="flex items-center justify-between text-sm border-t border-border/50 pt-3">
+                  <p className="text-muted-foreground">
+                    Profissional: <span className="font-semibold text-foreground uppercase">{selectedProfessionalData.name}</span>
+                  </p>
+                  <p className="text-muted-foreground font-medium">{selectedServiceData.duration}</p>
                 </div>
+
+                {/* Date and Time Selection */}
+                {date && time && (
+                  <div className="border-t border-border/50 pt-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">→ Data e Horário:</p>
+                        <p className="font-semibold text-foreground">
+                          {format(date, "dd/MM/yyyy", { locale: ptBR })} às {time}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setDate(undefined);
+                          setTime("");
+                          setCalendarOpen(true); // Reopen calendar
+                        }}
+                        className="text-xs"
+                      >
+                        ALTERAR
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-            {/* Nome */}
-            <div className="space-y-2">
-              <Label htmlFor="nome">Nome completo</Label>
-              <Input
-                id="nome"
-                placeholder="Seu nome"
-                {...register("nome")}
-                className={cn(errors.nome && "border-destructive")}
-              />
-              {errors.nome && (
-                <p className="text-sm text-destructive">{errors.nome.message}</p>
-              )}
-            </div>
+            {/* Client Info Section */}
+            <div className="space-y-4 p-4 rounded-lg border border-border bg-background/50">
+              <p className="text-sm font-medium text-muted-foreground">→ Cliente:</p>
+              
+              {/* Nome */}
+              <div className="space-y-2">
+                <Label htmlFor="nome">Nome completo *</Label>
+                <Input
+                  id="nome"
+                  placeholder="Digite seu nome"
+                  {...register("nome")}
+                  className={cn(errors.nome && "border-destructive")}
+                />
+                {errors.nome && (
+                  <p className="text-sm text-destructive">{errors.nome.message}</p>
+                )}
+              </div>
 
-            {/* Email */}
-            <div className="space-y-2">
-              <Label htmlFor="email">E-mail</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="seu@email.com"
-                {...register("email")}
-                className={cn(errors.email && "border-destructive")}
-              />
-              {errors.email && (
-                <p className="text-sm text-destructive">{errors.email.message}</p>
-              )}
-            </div>
+              {/* WhatsApp */}
+              <div className="space-y-2">
+                <Label htmlFor="whatsapp">Telefone/WhatsApp *</Label>
+                <Input
+                  id="whatsapp"
+                  placeholder="(00) 00000-0000"
+                  {...register("whatsapp")}
+                  className={cn(errors.whatsapp && "border-destructive")}
+                />
+                {errors.whatsapp && (
+                  <p className="text-sm text-destructive">{errors.whatsapp.message}</p>
+                )}
+              </div>
 
-            {/* WhatsApp */}
-            <div className="space-y-2">
-              <Label htmlFor="whatsapp">WhatsApp</Label>
-              <Input
-                id="whatsapp"
-                placeholder="11999999999"
-                {...register("whatsapp")}
-                className={cn(errors.whatsapp && "border-destructive")}
-              />
-              {errors.whatsapp && (
-                <p className="text-sm text-destructive">{errors.whatsapp.message}</p>
-              )}
+              {/* Email */}
+              <div className="space-y-2">
+                <Label htmlFor="email">E-mail (opcional)</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="exemplo@email.com"
+                  {...register("email")}
+                  className={cn(errors.email && "border-destructive")}
+                />
+                {errors.email && (
+                  <p className="text-sm text-destructive">{errors.email.message}</p>
+                )}
+              </div>
+
+              {/* Checkboxes */}
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center space-x-2">
+                  <Controller
+                    name="receberLembretes"
+                    control={control}
+                    defaultValue={false}
+                    render={({ field }) => (
+                      <Checkbox
+                        id="receberLembretes"
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    )}
+                  />
+                  <Label htmlFor="receberLembretes" className="text-sm font-normal cursor-pointer">
+                    Quero receber lembretes por WhatsApp
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Controller
+                    name="primeiraVez"
+                    control={control}
+                    defaultValue={false}
+                    render={({ field }) => (
+                      <Checkbox
+                        id="primeiraVez"
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    )}
+                  />
+                  <Label htmlFor="primeiraVez" className="text-sm font-normal cursor-pointer">
+                    Primeira vez neste estabelecimento
+                  </Label>
+                </div>
+              </div>
             </div>
 
             {/* Date Selection */}
             <div className="space-y-2">
               <Label>Data</Label>
-              <Popover>
+              <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
@@ -263,6 +373,7 @@ export const BookingForm = ({ selectedService, selectedProfessional, onSuccess }
                     onSelect={(newDate) => {
                       setDate(newDate);
                       setTime(""); // Reset time when date changes
+                      setCalendarOpen(false); // Close calendar after selection
                     }}
                     disabled={(date) => {
                       if (date < new Date(new Date().setHours(0, 0, 0, 0))) return true;
@@ -294,8 +405,8 @@ export const BookingForm = ({ selectedService, selectedProfessional, onSuccess }
 
             <Button
               type="submit"
-              className="w-full h-12 text-base font-semibold"
-              disabled={isSubmitting || !selectedService}
+              className="w-full h-12 text-base font-semibold uppercase"
+              disabled={isSubmitting || !selectedService || !date || !time}
             >
               {isSubmitting ? (
                 <>
@@ -303,7 +414,7 @@ export const BookingForm = ({ selectedService, selectedProfessional, onSuccess }
                   Enviando...
                 </>
               ) : (
-                "Solicitar Agendamento"
+                "Confirmar Agendamento"
               )}
             </Button>
           </form>

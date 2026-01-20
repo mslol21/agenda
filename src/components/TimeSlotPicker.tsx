@@ -5,6 +5,12 @@ import { cn } from "@/lib/utils";
 import { Clock, Loader2, AlertCircle } from "lucide-react";
 import { Settings } from "@/types";
 
+interface BookingDetails {
+  time: string;
+  clientName: string;
+  service: string;
+}
+
 interface TimeSlotPickerProps {
   selectedDate: Date | undefined;
   selectedTime: string;
@@ -21,6 +27,7 @@ export const TimeSlotPicker = ({
   professionalName
 }: TimeSlotPickerProps) => {
   const [bookedTimes, setBookedTimes] = useState<string[]>([]);
+  const [bookingDetails, setBookingDetails] = useState<Map<string, BookingDetails>>(new Map());
   const [loadingBookings, setLoadingBookings] = useState(false);
   const [generatedSlots, setGeneratedSlots] = useState<{ time: string; period: string }[]>([]);
 
@@ -90,6 +97,7 @@ export const TimeSlotPicker = ({
     const fetchBookedTimes = async () => {
       if (!selectedDate) {
         setBookedTimes([]);
+        setBookingDetails(new Map());
         return;
       }
 
@@ -110,6 +118,7 @@ export const TimeSlotPicker = ({
 
         const querySnapshot = await getDocs(q);
         const booked: string[] = [];
+        const details = new Map<string, BookingDetails>();
 
         querySnapshot.forEach((doc) => {
             const data = doc.data();
@@ -119,11 +128,20 @@ export const TimeSlotPicker = ({
                     return; // Skip if it's for another professional
                 }
                 const date = new Date(data.data_hora);
-                booked.push(formatTime(date));
+                const timeStr = formatTime(date);
+                booked.push(timeStr);
+                
+                // Store booking details for tooltip
+                details.set(timeStr, {
+                  time: timeStr,
+                  clientName: data.nome_cliente || "Cliente",
+                  service: data.servico || "Serviço"
+                });
             }
         });
 
         setBookedTimes(booked);
+        setBookingDetails(details);
       } catch (error) {
         console.error("Error fetching booked times:", error);
       } finally {
@@ -173,6 +191,12 @@ export const TimeSlotPicker = ({
   const renderTimeSlot = (slot: { time: string; period: string }) => {
     const isBooked = bookedTimes.includes(slot.time);
     const isSelected = selectedTime === slot.time;
+    const bookingInfo = bookingDetails.get(slot.time);
+
+    // Create tooltip text for occupied slots
+    const tooltipText = isBooked && bookingInfo 
+      ? `${slot.time} - Ocupado (${bookingInfo.clientName} - ${bookingInfo.service})`
+      : undefined;
 
     return (
       <button
@@ -180,19 +204,21 @@ export const TimeSlotPicker = ({
         type="button"
         disabled={isBooked}
         onClick={() => onSelectTime(slot.time)}
+        title={tooltipText}
         className={cn(
           "relative flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-all duration-200",
           "focus:outline-none focus:ring-2 focus:ring-primary/50",
           isBooked && "bg-muted/50 border-muted cursor-not-allowed opacity-60",
-          isSelected && !isBooked && "border-primary bg-primary/10 shadow-md",
-          !isSelected && !isBooked && "border-border hover:border-primary/50 hover:bg-accent cursor-pointer"
+          isSelected && !isBooked && "border-primary bg-primary/10 shadow-md border-l-4 border-l-blue-500",
+          !isSelected && !isBooked && "border-border border-l-4 border-l-green-500 bg-green-50/50 hover:border-primary/50 hover:bg-green-100/50 cursor-pointer"
         )}
       >
         <span
           className={cn(
             "text-lg font-semibold",
             isBooked && "text-muted-foreground line-through",
-            isSelected && !isBooked && "text-primary"
+            isSelected && !isBooked && "text-primary",
+            !isSelected && !isBooked && "text-foreground"
           )}
         >
           {slot.time}
@@ -208,13 +234,25 @@ export const TimeSlotPicker = ({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
-          {availableCount > 0 ? `${availableCount} horários disponíveis` : "Sem horários livres"}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <p className="text-sm font-medium text-foreground">
+          {selectedTime 
+            ? `${availableCount - 1} horários disponíveis (1 selecionado)` 
+            : `${availableCount} horários disponíveis`}
         </p>
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-primary"></span> Livre</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-muted"></span> Ocupado</span>
+        <div className="flex items-center gap-4 text-xs">
+            <span className="flex items-center gap-1.5">
+              <span className="text-base">🟢</span> 
+              <span className="text-muted-foreground">Disponível</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="text-base">⚫</span> 
+              <span className="text-muted-foreground">Ocupado</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="text-base">🔵</span> 
+              <span className="text-muted-foreground">Selecionado</span>
+            </span>
         </div>
       </div>
 

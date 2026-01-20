@@ -37,5 +37,23 @@ export interface Appointment {
   profissional: string;
   data_hora: string;
   status: 'pendente' | 'confirmado' | 'recusado';
+  receber_lembretes?: boolean;
+  primeira_vez?: boolean;
+  observacoes?: string;
   created_at: any;
+}
+
+export interface BookingDetails {
+  bookingId: string;
+  clientName: string;
+  phone: string;
+  email?: string;
+  serviceName: string;
+  professionalName: string;
+  date: Date;
+  time: string;
+  price: string;
+  duration: string;
+  receberLembretes: boolean;
+  primeiraVez: boolean;
 }

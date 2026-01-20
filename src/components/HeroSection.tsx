@@ -1,4 +1,5 @@
-import { Calendar, Clock, CheckCircle } from "lucide-react";
+import { Calendar, Clock, CheckCircle, ChevronRight } from "lucide-react";
+import { Button } from "./ui/button";
 
 export const HeroSection = () => {
   return (
@@ -39,18 +40,29 @@ export const HeroSection = () => {
                 Simples assim. Sem ligações, sem espera.
               </p>
               
-              <div className="flex flex-col sm:flex-row gap-4 sm:gap-6 text-sm text-muted-foreground">
-                <div className="flex items-center gap-2">
-                  <div className="p-2 bg-primary/10 rounded-full text-primary"><CheckCircle className="w-4 h-4" /></div>
-                  <span>Confirmação rápida</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="p-2 bg-primary/10 rounded-full text-primary"><Clock className="w-4 h-4" /></div>
-                  <span>Disponível 24h</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="p-2 bg-primary/10 rounded-full text-primary"><Calendar className="w-4 h-4" /></div>
-                  <span>Escolha sua data</span>
+              <div className="flex flex-col sm:flex-row items-center sm:items-start gap-8">
+                <Button 
+                  size="lg" 
+                  className="h-14 px-10 text-lg font-bold gap-2 shadow-xl shadow-primary/25 hover:shadow-primary/40 transition-all rounded-2xl group"
+                  onClick={() => document.getElementById('professionals')?.scrollIntoView({ behavior: 'smooth' })}
+                >
+                  Agendar Agora
+                  <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                </Button>
+
+                <div className="flex flex-col gap-3 text-sm text-muted-foreground">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 bg-primary/10 rounded-full text-primary"><CheckCircle className="w-3.5 h-3.5" /></div>
+                    <span className="font-medium">Confirmação rápida</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 bg-primary/10 rounded-full text-primary"><Clock className="w-3.5 h-3.5" /></div>
+                    <span className="font-medium">Disponível 24h</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 bg-primary/10 rounded-full text-primary"><Calendar className="w-3.5 h-3.5" /></div>
+                    <span className="font-medium">Escolha sua data</span>
+                  </div>
                 </div>
               </div>
             </div>
