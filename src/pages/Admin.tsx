@@ -108,6 +108,11 @@ const Admin = () => {
       time: ""
   });
 
+  // Confirmation Message Dialog States
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [appointmentToConfirm, setAppointmentToConfirm] = useState<Appointment | null>(null);
+  const [confirmMessage, setConfirmMessage] = useState("");
+
   // Helper to get service details
   const getServiceDetails = (serviceName: string) => {
     // Case insensitive matching
@@ -443,29 +448,60 @@ const Admin = () => {
   // Appointments
   const updateStatus = async (id: string, status: 'confirmado' | 'recusado') => {
     try {
+      // If confirming, open the message editor dialog
+      if (status === 'confirmado') {
+        const appointment = appointments.find(a => a.id === id);
+        if (appointment) {
+          setAppointmentToConfirm(appointment);
+          
+          // Generate default message
+          const date = new Date(appointment.data_hora);
+          const formattedDate = format(date, "dd 'de' MMMM", { locale: ptBR });
+          const formattedTime = format(date, "HH:mm");
+          
+          const defaultMessage = `Olá, ${appointment.nome_cliente}! Seu agendamento de *${appointment.servico}* com *${appointment.profissional}* para dia *${formattedDate} às ${formattedTime}* foi CONFIRMADO! Estamos te esperando.`;
+          
+          setConfirmMessage(defaultMessage);
+          setConfirmDialogOpen(true);
+        }
+        return; // Don't update status yet, wait for user to send message
+      }
+
+      // For refused status, update directly
       const docRef = doc(db, "agendamentos", id);
       await updateDoc(docRef, { status });
       toast.success(`Agendamento ${status}`);
 
-      // Auto-send WhatsApp if confirmed
-      if (status === 'confirmado') {
-        const appointment = appointments.find(a => a.id === id);
-        if (appointment && appointment.whatsapp) {
-            const phone = appointment.whatsapp.replace(/\D/g, '');
-            const date = new Date(appointment.data_hora);
-            const formattedDate = format(date, "dd 'de' MMMM", { locale: ptBR });
-            const formattedTime = format(date, "HH:mm");
-            
-            const message = `Olá, ${appointment.nome_cliente}! Seu agendamento de *${appointment.servico}* com *${appointment.profissional}* para dia *${formattedDate} às ${formattedTime}* foi CONFIRMADO! Estamos te esperando.`;
-            
-            // Use web.whatsapp.com to force Web interface
-            window.open(`https://web.whatsapp.com/send?phone=55${phone}&text=${encodeURIComponent(message)}`, '_blank');
-        }
-      }
-
     } catch (e) {
       console.error(e);
       toast.error("Erro ao atualizar status");
+    }
+  };
+
+  // Send confirmation message and update status
+  const sendConfirmationMessage = async () => {
+    if (!appointmentToConfirm) return;
+
+    try {
+      // Update status to confirmed
+      const docRef = doc(db, "agendamentos", appointmentToConfirm.id!);
+      await updateDoc(docRef, { status: 'confirmado' });
+      toast.success("Agendamento confirmado");
+
+      // Send WhatsApp message if phone exists
+      if (appointmentToConfirm.whatsapp) {
+        const phone = appointmentToConfirm.whatsapp.replace(/\D/g, '');
+        window.open(`https://web.whatsapp.com/send?phone=55${phone}&text=${encodeURIComponent(confirmMessage)}`, '_blank');
+      }
+
+      // Close dialog
+      setConfirmDialogOpen(false);
+      setAppointmentToConfirm(null);
+      setConfirmMessage("");
+
+    } catch (e) {
+      console.error(e);
+      toast.error("Erro ao confirmar agendamento");
     }
   };
 
@@ -1246,6 +1282,84 @@ const Admin = () => {
           </TabsContent>
         </Tabs>
       </main>
+
+      {/* Confirmation Message Dialog */}
+      <Dialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageCircle className="w-5 h-5 text-green-600" />
+              Editar Mensagem de Confirmação
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            {appointmentToConfirm && (
+              <div className="bg-slate-50 p-4 rounded-lg border space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-slate-700">Cliente:</span>
+                  <span className="font-bold">{appointmentToConfirm.nome_cliente}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-slate-700">Serviço:</span>
+                  <span className="font-medium">{appointmentToConfirm.servico}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-slate-700">Profissional:</span>
+                  <span className="font-medium">{appointmentToConfirm.profissional}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-slate-700">Data/Hora:</span>
+                  <span className="font-medium">
+                    {format(new Date(appointmentToConfirm.data_hora), "dd/MM/yyyy 'às' HH:mm")}
+                  </span>
+                </div>
+                {appointmentToConfirm.whatsapp && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-slate-700">WhatsApp:</span>
+                    <span className="font-medium">{appointmentToConfirm.whatsapp}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="confirm-message">Mensagem de Confirmação</Label>
+              <textarea
+                id="confirm-message"
+                className="w-full min-h-[150px] p-3 border rounded-md resize-y focus:outline-none focus:ring-2 focus:ring-primary"
+                value={confirmMessage}
+                onChange={(e) => setConfirmMessage(e.target.value)}
+                placeholder="Digite a mensagem de confirmação..."
+              />
+              <p className="text-xs text-muted-foreground">
+                Dica: Use *texto* para negrito no WhatsApp
+              </p>
+            </div>
+          </div>
+
+          <div className="flex gap-3 justify-end">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setConfirmDialogOpen(false);
+                setAppointmentToConfirm(null);
+                setConfirmMessage("");
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={sendConfirmationMessage}
+              className="bg-green-600 hover:bg-green-700 gap-2"
+              disabled={!confirmMessage.trim()}
+            >
+              <MessageCircle className="w-4 h-4" />
+              Confirmar e Enviar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
